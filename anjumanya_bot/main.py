@@ -1,35 +1,49 @@
 import logging
+import asyncio
 
 from aiogram import Bot, Dispatcher, executor, types
-from local_settings import API_TOKEN
-from query_database import create_db
-import services
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+
+from settings.local_settings import API_TOKEN
+from handlers import register_handlers
 
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-
-# Initialize bot and dispatcher
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+logger = logging.getLogger(__name__)
 
 
-# commands bot
-@dp.message_handler(commands=["start", "help"])
-async def send_welcome(message: types.Message):
-    check_user
-    await message.reply(services.start_msg)
+async def set_commands(bot: Bot):
+    commands = [
+        types.BotCommand(command="/help", description="инструкция"),
+        types.BotCommand(command="/input", description="ввести данные тренировочки"),
+        types.BotCommand(command="/cancel", description="отмена ввода данных"),
+        #types.BotCommand(command="/send_to_chat", description="отправить последнюю тренировочку в чат"),
+        types.BotCommand(command="/get_data", description="вывести данные по тренировочке")
+    ]
+    await bot.set_my_commands(commands)
 
 
-@dp.message_handler()
-async def echo(message: types.Message):
-    # old style:
-    # await bot.send_message(message.chat.id, message.text)
+async def main():
+    # Настройка логирования в stdout
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    )
+    logger.error("Starting bot")
 
-    await message.answer(message.text)
+    # Объявление и инициализация объектов бота и диспетчера
+    bot = Bot(token=API_TOKEN)
+    dp = Dispatcher(bot, storage=MemoryStorage())
 
+    # Регистрация хэндлеров
+    register_handlers(dp)
+
+    # Установка команд бота
+    await set_commands(bot)
+
+    # Запуск поллинга
+    #await dp.skip_updates()  # пропуск накопившихся апдейтов (необязательно)
+    await dp.start_polling()
 
 
 if __name__ == "__main__":
-    create_db()
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())

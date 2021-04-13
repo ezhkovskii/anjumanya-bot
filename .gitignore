@@ -131,4 +131,4 @@ dmypy.json
 
 .idea
 local_settings.py
-*.db
+!db/*.db
