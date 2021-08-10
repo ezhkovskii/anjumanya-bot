@@ -1,12 +1,14 @@
 from datetime import datetime as dt
 from datetime import timedelta as td
 from collections import namedtuple
+from dateutil.relativedelta import *
 
 from aiogram.types.input_file import InputFile
 
 from database import Database
 
 from tabulate import tabulate
+
 
 class User:
 
@@ -70,8 +72,6 @@ class Exercise:
 
 class TrainingData:
 
-    OUTPUT_FILENAME = "data.txt"
-
     db = Database()
 
     data_for_database = {}
@@ -91,8 +91,7 @@ class TrainingData:
                 SELECT 
                     exercise,
                     type_ex,
-                    sum(sets),
-                    sum(repetition),
+                    sum(sets * repetition),
                     sum(duration_training),
                     date_insert
                 FROM
@@ -102,21 +101,27 @@ class TrainingData:
 
         if interval == cls.TIME_INTERVALS[0]: # за "сегодня"
             date_today = dt.today().strftime('%Y-%m-%d')
-            query += "WHERE date_insert = ? and user_id = ?"
-            params = (date_today, user_id)
+            params = (date_today, date_today, user_id)
 
         elif interval == cls.TIME_INTERVALS[1]: # за "неделя"
-            ...
+            date_today = dt.today().strftime('%Y-%m-%d')
+            week_ago = (dt.today() - td(days=7)).strftime('%Y-%m-%d')
+            params = (week_ago, date_today, user_id)
 
         elif interval == cls.TIME_INTERVALS[2]: # за "месяц"
-            ...
+            date_today = dt.today().strftime('%Y-%m-%d')
+            month_ago = (dt.today() - relativedelta(months=1)).strftime('%Y-%m-%d')
+            params = (month_ago, date_today, user_id)
 
         elif interval == cls.TIME_INTERVALS[3]: # за "год"
-            ...
+            date_today = dt.today().strftime('%Y-%m-%d')
+            year_ago = (dt.today() - relativedelta(years=1)).strftime('%Y-%m-%d')
+            params = (year_ago, date_today, user_id)
 
+        query += "WHERE date_insert between ? and ? and user_id = ?"
         query += "\nGROUP by exercise, type_ex, date_insert\nORDER BY date_insert"
+
         data = cls.db.sql_query_execute(query, params)
-        print(data)
 
         if data:
             table = cls._transform_data(data)
@@ -125,17 +130,17 @@ class TrainingData:
 
         table_for_output = cls._pretty_table(table)
 
-        if len(data) > 10:
+        if len(data) > 10: # больше 10 строк в таблице с данными
             # формируем файл с таблицей
-            with open(cls.OUTPUT_FILENAME, 'w', encoding='utf-8') as f:
+            with open('data.txt', 'w', encoding='utf-8') as f:
                 f.write(table_for_output)
 
-            file = InputFile(cls.OUTPUT_FILENAME)
+            file = InputFile('data.txt')
             return file, cls.TYPE_DATA_OUTPUT[0]
 
         else:
             # формируем текст с таблицей
-            msg = "<pre>" + table_for_output + "</pre>"
+            msg = table
             return msg, cls.TYPE_DATA_OUTPUT[1]
 
 
@@ -143,16 +148,15 @@ class TrainingData:
     def _transform_data(cls, data):
         # преобразуем данные из бд в нормальный вид
 
-        table_set = []
-        table_dur = []
+        table = []
 
         for row in data:
             if row[1] == 'set':
-                table_set.append( (row[5], row[0], int(row[2]) * int(row[3])) )
+                table.append( (row[4], row[0], row[2]) )
             elif row[1] == 'time':
-                table_dur.append( (row[5], row[0], cls._second_to_minutes(row[4])) )
+                table.append( (row[4], row[0], cls._second_to_minutes(row[3])) )
 
-        return table_set + table_dur
+        return table
 
     @classmethod
     def _second_to_minutes(cls, seconds):
@@ -218,28 +222,40 @@ class TrainingData:
         if exercise is None:
             error += "нормально выбери упражнение\n"
 
+        if error != "":
+            return error
+
         sets = data.get("sets", None)
         repetition = data.get("rep", None)
-        if sets is not None and repetition is not None:
+        if data["type_ex"] == "set":
             try:
-                sets = int(data.get("sets", None))
-                repetition = int(data.get("rep", None))
+                if sets is not None and repetition is not None:
+                    sets = int(data.get("sets", None))
+                    repetition = int(data.get("rep", None))
+
+                if sets < 0 or repetition < 0:
+                    error += "как так? нормально напиши циферки\n"
+
             except Exception as e:
                 print(e)
                 error += "нормально пиши циферки\n"
 
-        if sets < 0 or repetition < 0:
-            error += "нормально пиши циферки\n"
+        elif data["type_ex"] == "time":
+            duration_training = data.get("duration_training", None)
+            duration_training_in_seconds = None
+            if duration_training is not None:
+                duration_training_in_seconds = cls._pars_duration_training(duration_training)
+                if duration_training_in_seconds is None:
+                    error += "нормально пиши циферки\n"
 
-        duration_training = data.get("duration_training", None)
-        duration_training_in_seconds = None
-        if duration_training is not None:
-            duration_training_in_seconds = cls._pars_duration_training(duration_training)
-            if duration_training_in_seconds is None:
-                error += "нормально пиши циферки\n"
+        if error != "":
+            return error
 
         if sets is None and repetition is None and duration_training is None:
             error += "чето не то"
+
+        if error != "":
+            return error
 
         if error == "":
             cls.data_for_database["exercise"] = exercise.name

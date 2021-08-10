@@ -58,7 +58,6 @@ async def input_end(message: types.Message, state: FSMContext):
     elif training_data["type_ex"] == "time":
         await state.update_data(duration_training=message.text)
     training_data = await state.get_data()
-
     error = TrainingData.data_is_valid(training_data)
     if not error:
         data_for_database = TrainingData.data_for_database
@@ -73,7 +72,7 @@ async def input_end(message: types.Message, state: FSMContext):
                 await message.answer(
                     msg + f"""длительность: {training_data['duration_training']}"""
                 )
-            await message.answer("если хош, отправь в чат результаты /send_to_chat")
+            #await message.answer("если хош, отправь в чат результаты /send_to_chat")
         else:
             await message.answer("чето не то")
     else:
@@ -98,17 +97,24 @@ async def get_data_end(message: types.Message, state: FSMContext):
     check_time_interval = TrainingData.time_interval_exist(message.text)
     if not check_time_interval:
         await message.answer("нормально выбери срок")
-        return
+        await state.finish()
 
     data, type_data = TrainingData.get_data_for_time_interval(message.from_user.id, message.text)
+
+    if data is None:
+        await message.answer("за выбранный срок нет данных", reply_markup=types.ReplyKeyboardRemove())
+        await state.finish()
+        return
+
     types_data = TrainingData.TYPE_DATA_OUTPUT
     if type_data == types_data[0]:
         await message.answer_document(data, reply_markup=types.ReplyKeyboardRemove())
     elif type_data == types_data[1]:
-        await message.answer(data, parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
+        for row in data:
+            msg = "%s, %s, %s" % row
+            await message.answer(msg, parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
     else:
-        await message.answer("че то нето")
-        return
+        await message.answer("че то нето", reply_markup=types.ReplyKeyboardRemove())
 
     await state.finish()
 
@@ -127,8 +133,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 ща расскажу че могу:
 сари, напиши /input выбираешь упражение, пишешь сколько сделал подходов и повторов и се
 если не хочешь добавлять данные пиши /cancel
-можешь отправить свои резы в беседу /send_to_chat
-можешь их посмотреть /get_data
+можешь посмотреть данные /get_data
 если хочешь предложить чето новое для бота пиши Сане 
 если че то забыл пиши /help
 это все, алависта
